@@ -3,6 +3,7 @@
 
 #if WITH_PACKAGE_CONTEXT && ENGINE_MAJOR_VERSION > 4
 #include "AssetRegistry/IAssetRegistry.h"
+#include "AssetRegistry/AssetRegistryState.h"
 #include "Async/Async.h"
 #include "Serialization/LargeMemoryWriter.h"
 #include "UObject/SavePackage.h"
@@ -46,6 +47,15 @@ TUniquePtr<FAssetRegistryState> FHotPatcherPackageWriter::LoadPreviousAssetRegis
 FCbObject FHotPatcherPackageWriter::GetOplogAttachment(FName PackageName, FUtf8StringView AttachmentKey)
 {
 	return FCbObject();
+}
+
+void FHotPatcherPackageWriter::GetOplogAttachments(TArrayView<FName> PackageNames, TArrayView<FUtf8StringView> AttachmentKeys, TUniqueFunction<void(FName, FUtf8StringView, FCbObject&&)>&& Callback)
+{
+}
+
+IPackageWriter::ECommitStatus FHotPatcherPackageWriter::GetCommitStatus(FName PackageName)
+{
+	return ECommitStatus::Success;
 }
 
 void FHotPatcherPackageWriter::RemoveCookedPackages(TArrayView<const FName> PackageNamesToRemove)

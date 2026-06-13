@@ -145,7 +145,7 @@ bool UFlibAssetManageHelper::GetAssetPackageGUID(FAssetDetail& AssetDetail)
 	if(!GetWPWorldGUID(AssetDetail))
 #endif
 	{
-		FSoftObjectPath PackagePath(AssetDetail.PackagePath);
+		FSoftObjectPath PackagePath(AssetDetail.PackagePath.ToString());
 		return GetAssetPackageGUID(PackagePath.GetLongPackageName(),AssetDetail.Guid);
 	}
 	return false;
@@ -157,7 +157,7 @@ bool UFlibAssetManageHelper::GetWPWorldGUID(FAssetDetail& AssetDetail)
 	bool bIsWPMap = false;
 	if(AssetDetail.AssetType.IsEqual(TEXT("World")))
 	{
-		FSoftObjectPath WorldPath(AssetDetail.PackagePath);
+		FSoftObjectPath WorldPath(AssetDetail.PackagePath.ToString());
 		FString Filename = FPackageName::LongPackageNameToFilename(WorldPath.GetLongPackageName(),FPackageName::GetMapPackageExtension());
 		if(FPaths::FileExists(Filename))
 		{
@@ -1484,11 +1484,13 @@ TArray<UPackage*> UFlibAssetManageHelper::LoadPackagesForCooking(const TArray<FS
 	{
 		if(!bStorageConcurrent && Package->IsFullyLoaded())
 		{
+#if !UE_VERSION_NEWER_THAN(5,6,0)
 			UMetaData* MetaData = Package->GetMetaData();
 			if(MetaData)
 			{
 				MetaData->RemoveMetaDataOutsidePackage();
 			}
+#endif
 		}
 		// Precache the metadata so we don't risk rehashing the map in the parallelfor below
 		if(bStorageConcurrent)
@@ -1775,7 +1777,7 @@ FAssetData UFlibAssetManageHelper::GetAssetByObjectPath(FName Path)
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
 	IAssetRegistry* AssetRegistry = &AssetRegistryModule.Get();
 #if WITH_UE5
-	return  AssetRegistry->GetAssetByObjectPath(FSoftObjectPath{Path}, true);
+	return  AssetRegistry->GetAssetByObjectPath(FSoftObjectPath(Path.ToString()), true);
 #else
 	return  AssetRegistry->GetAssetByObjectPath(Path, true);
 #endif

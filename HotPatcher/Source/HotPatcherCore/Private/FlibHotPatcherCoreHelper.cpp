@@ -43,6 +43,10 @@
 #if !UE_VERSION_OLDER_THAN(5,4,0)
 #include "AssetCompilingManager.h"
 #endif
+#if !UE_VERSION_OLDER_THAN(5,6,0)
+#include "LooseFilesCookArtifactReader.h"
+#include "UObject/ObjectSaveContext.h"
+#endif
 
 DEFINE_LOG_CATEGORY(LogHotPatcherCoreHelper);
 
@@ -347,7 +351,7 @@ FSavePackageContext* UFlibHotPatcherCoreHelper::CreateSaveContext(const ITargetP
 	FString WriterDebugName;
 	if (bUseZenLoader)
 	{
-		PackageWriter = new FZenStoreWriter(ResolvedProjectPath, ResolvedMetadataPath, TargetPlatform);
+		PackageWriter = new FZenStoreWriter(ResolvedProjectPath, ResolvedMetadataPath, TargetPlatform, MakeShared<FLooseFilesCookArtifactReader>());
 		WriterDebugName = TEXT("ZenStore");
 	}
 	else
@@ -642,7 +646,9 @@ bool UFlibHotPatcherCoreHelper::CookPackage(
 			PackageArgs.SaveFlags = SaveFlags;
 			PackageArgs.Error = GError;
 			PackageArgs.SavePackageContext = CurrentPlatformPackageContext;
+#if !UE_VERSION_NEWER_THAN(5,6,0)
 			PackageArgs.TargetPlatform = Platform.Value;
+#endif
 			PackageArgs.bSlowTask = false;
 			PackageArgs.FinalTimeStamp = FDateTime::MinValue();
 			#if UE_VERSION_OLDER_THAN(5,4,0)
@@ -685,10 +691,14 @@ bool UFlibHotPatcherCoreHelper::CookPackage(
 				// TODO: Reenable BuildDefinitionList once FCbPackage support for empty FCbObjects is in
 				//Info.Attachments.Add({ "BuildDefinitionList", BuildDefinitionList });
 				Info.WriteOptions = IPackageWriter::EWriteOptions::Write;
+#if !UE_VERSION_NEWER_THAN(5,6,0)
 				if (!!(SaveFlags & SAVE_ComputeHash))
 				{
 					Info.WriteOptions |= IPackageWriter::EWriteOptions::ComputeHash;
 				}
+#else
+				Info.WriteOptions |= IPackageWriter::EWriteOptions::ComputeHash;
+#endif
 				CurrentPlatformPackageContext->PackageWriter->CommitPackage(MoveTemp(Info));
 			}
 		#endif
@@ -1617,7 +1627,7 @@ bool UFlibHotPatcherCoreHelper::SerializeAssetRegistry(IAssetRegistry* AssetRegi
 	AssetRegistry->InitializeTemporaryAssetRegistryState(State, SaveOptions, true);
 	for(const auto& AssetPackagePath:PackagePaths)
 	{
-		if (State.GetAssetByObjectPath(FName(*AssetPackagePath)))
+		if (State.GetAssetByObjectPath(FSoftObjectPath(*AssetPackagePath)))
 		{
 			UE_LOG(LogHotPatcherCoreHelper, Warning, TEXT("%s already add to AssetRegistryState!"), *AssetPackagePath);
 			continue;
@@ -1847,9 +1857,11 @@ FProjectPackageAssetCollection UFlibHotPatcherCoreHelper::ImportProjectSettingsP
 	{
 		// allow the game to fill out the asset registry, as well as get a list of objects to always cook
 		TArray<FString> FilesInPathStrings;
+#if !UE_VERSION_NEWER_THAN(5,6,0)
 		PRAGMA_DISABLE_DEPRECATION_WARNINGS;
 		FGameDelegates::Get().GetCookModificationDelegate().ExecuteIfBound(FilesInPathStrings);
 		PRAGMA_ENABLE_DEPRECATION_WARNINGS;
+#endif
 		for(const auto& BuildFilename:FilesInPathStrings)
 		{
 			FString OutPackageName;
@@ -2383,7 +2395,14 @@ void UFlibHotPatcherCoreHelper::CacheForCookedPlatformData(
 #endif
     				}
     				{
+#if UE_VERSION_NEWER_THAN(5,6,0)
+    					FObjectSaveContextData PreSaveContextData;
+    					FObjectPreSaveRootContext PreSaveRootContext(PreSaveContextData);
+    					World->PreSaveRoot(PreSaveRootContext);
+    					bool bCleanupIsRequired = PreSaveContextData.bCleanupRequired;
+#else
     					bool bCleanupIsRequired = World->PreSaveRoot(TEXT(""));
+#endif
     					WorldsToPostSaveRoot.Add(World, bCleanupIsRequired);
     				}
     				GIsCookerLoadingPackage = false;
@@ -2419,7 +2438,14 @@ void UFlibHotPatcherCoreHelper::CacheForCookedPlatformData(
     					SCOPED_NAMED_EVENT_TEXT("Export PreSave",FColor::Red);
     					GIsCookerLoadingPackage = true;
     					{
+#if UE_VERSION_NEWER_THAN(5,6,0)
+    						FObjectSaveContextData PreSaveData;
+    						PreSaveData.TargetPlatform = Platform;
+    						FObjectPreSaveContext PreSaveContext(PreSaveData);
+    						ExportObj->PreSave(PreSaveContext);
+#else
     						ExportObj->PreSave(Platform);
+#endif
     					}
     					GIsCookerLoadingPackage = false;
     				}
@@ -2471,7 +2497,15 @@ void UFlibHotPatcherCoreHelper::CacheForCookedPlatformData(
 #endif
 			UWorld* World = WorldIt.Key();
 			check(World);
+#if UE_VERSION_NEWER_THAN(5,6,0)
+			// PostSaveRoot signature changed in UE 5.6 - no longer takes bool
+			FObjectSaveContextData SaveContextData;
+			SaveContextData.bCleanupRequired = WorldIt.Value();
+			FObjectPostSaveRootContext PostSaveContext(SaveContextData);
+			World->PostSaveRoot(PostSaveContext);
+#else
 			World->PostSaveRoot(WorldIt.Value());
+#endif
 		}
 	}
 	
@@ -2569,14 +2603,20 @@ void UFlibHotPatcherCoreHelper::WaitObjectsCachePlatformDataComplete(TSet<UObjec
 uint32 UFlibHotPatcherCoreHelper::GetCookSaveFlag(UPackage* Package, bool bUnversioned, bool bStorageConcurrent,
                                                   bool CookLinkerDiff)
 {
+#if UE_VERSION_NEWER_THAN(5,6,0)
+	uint32 SaveFlags = SAVE_Async | (bUnversioned ? SAVE_Unversioned : 0);
+#else
 	uint32 SaveFlags = SAVE_KeepGUID | SAVE_Async| SAVE_ComputeHash | (bUnversioned ? SAVE_Unversioned : 0);
+#endif
 
 #if ENGINE_MAJOR_VERSION >4 || ENGINE_MINOR_VERSION >25
+#if !UE_VERSION_NEWER_THAN(5,6,0)
 	// bool CookLinkerDiff = false;
 	if(CookLinkerDiff)
 	{
 		SaveFlags |= SAVE_CompareLinker;
 	}
+#endif
 #endif
 	if (bStorageConcurrent)
 	{
@@ -2641,6 +2681,7 @@ FString UFlibHotPatcherCoreHelper::GetSavePackageResultStr(ESavePackageResult Re
 {
 	FString Str;
 
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
 	switch (Result)
 	{
 	case ESavePackageResult::Success:
@@ -2689,6 +2730,7 @@ FString UFlibHotPatcherCoreHelper::GetSavePackageResultStr(ESavePackageResult Re
 			break;
 		}
 	}
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
 	return Str;
 }
 
