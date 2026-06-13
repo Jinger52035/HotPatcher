@@ -1499,7 +1499,9 @@ TArray<UPackage*> UFlibAssetManageHelper::LoadPackagesForCooking(const TArray<FS
 			{
 				Package->FullyLoad();
 			}
+#if WITH_METADATA
 			Package->GetMetaData();
+#endif
 		}
 	}
 	GIsCookerLoadingPackage = false;

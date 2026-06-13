@@ -2482,7 +2482,9 @@ void UFlibHotPatcherCoreHelper::CacheForCookedPlatformData(
 		if (bStorageConcurrent)
 		{
 			// Precache the metadata so we don't risk rehashing the map in the parallelfor below
+#if WITH_METADATA
 			Package->GetMetaData();
+#endif
 		}
 	}
 
